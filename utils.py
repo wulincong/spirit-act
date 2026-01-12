@@ -145,6 +145,81 @@ class EpisodicDataset(torch.utils.data.Dataset):
         # print(image_data.dtype, qpos_data.dtype, action_data.dtype, is_pad.dtype)
         return image_data, qpos_data, action_data, is_pad
 
+class SpiritPretrainDataset(EpisodicDataset):
+    """
+    继承自 EpisodicDataset，修改 __getitem__ 以返回 (t, t+1) 数据对
+    用于训练动力学网络 Net_A 和 观测网络 Net_H
+    """
+    def __getitem__(self, index):
+        # 1. 找到对应的 episode 和起始时间
+        episode_id, start_ts = self._locate_transition(index)
+        dataset_path = self.dataset_path_list[episode_id]
+        
+        # 2. 确保我们能取到 t+1 时刻的数据（防止索引越界）
+        # 如果 start_ts 是该 episode 的最后一帧，则取前一帧作为 t，当前作为 t+1
+        with h5py.File(dataset_path, 'r') as root:
+            episode_len = root['/action'].shape[0]
+            
+        if start_ts >= episode_len - 1:
+            start_ts = episode_len - 2
+            
+        # 3. 获取 t 和 t+1 的数据
+        data_t = self._get_single_step(dataset_path, start_ts)
+        data_next = self._get_single_step(dataset_path, start_ts + 1)
+        
+        return {
+            'qpos_t': data_t['qpos'],
+            'action_t': data_t['action'], # 这里的 action 是 t 时刻执行的动作
+            'image_t': data_t['image'],
+            'qpos_next': data_next['qpos'],
+            'image_next': data_next['image']
+        }
+
+    def _get_single_step(self, dataset_path, ts):
+        # 复用父类的逻辑读取单个时间步的数据
+        # 这里为了简化，我手动展开了部分父类逻辑，只取我们需要的部分
+        with h5py.File(dataset_path, 'r') as root:
+            qpos = root['/observations/qpos'][ts]
+            # 获取 action (注意：ACT 数据集中 action[t] 通常指 t 时刻要想达到的目标或 t 时刻施加的动作)
+            # 我们只需要 t 时刻的一个动作向量，不需要 chunk
+            raw_action = root['/action'][ts] 
+            if '/base_action' in root:
+                base_action = root['/base_action'][ts]
+                # 根据需要可能要预处理 base_action，这里简化处理
+                action = np.concatenate([raw_action, base_action], axis=-1)
+            else:
+                # 补 2 个 0，凑成 16 维，以便和 norm_stats 对齐
+                dummy_base_action = np.zeros(2) 
+                action = np.concatenate([raw_action, dummy_base_action], axis=-1)
+            
+            image_dict = dict()
+            for cam_name in self.camera_names:
+                image_dict[cam_name] = root[f'/observations/images/{cam_name}'][ts]
+                
+            # (省略了解压缩代码，假设数据已解压或逻辑同父类)
+            
+            # 堆叠摄像头
+            all_cam_images = []
+            for cam_name in self.camera_names:
+                all_cam_images.append(image_dict[cam_name])
+            all_cam_images = np.stack(all_cam_images, axis=0)
+            
+            # 转 Tensor 并归一化
+            image_data = torch.from_numpy(all_cam_images)
+            image_data = torch.einsum('k h w c -> k c h w', image_data)
+            image_data = image_data / 255.0
+            
+            # 简单的归一化 (使用 self.norm_stats)
+            qpos_data = torch.from_numpy(qpos).float()
+            qpos_data = (qpos_data - self.norm_stats["qpos_mean"]) / self.norm_stats["qpos_std"]
+            
+            action_data = torch.from_numpy(action).float()
+            action_data = (action_data - self.norm_stats["action_mean"]) / self.norm_stats["action_std"]
+            
+            return {'qpos': qpos_data, 'action': action_data, 'image': image_data}
+    def __len__(self):
+        # 返回所有剧集的总帧数
+        return self.cumulative_len[-1]
 
 def get_norm_stats(dataset_path_list):
     all_qpos_data = []

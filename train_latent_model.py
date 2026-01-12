@@ -14,7 +14,7 @@ from constants import PUPPET_GRIPPER_JOINT_OPEN
 from utils import load_data # data functions
 from utils import sample_box_pose, sample_insertion_pose # robot functions
 from utils import compute_dict_mean, set_seed, detach_dict # helper functions
-from policy import ACTPolicy, CNNMLPPolicy
+from policy import ACTPolicy, CNNMLPPolicy, SpiritACTPolicy
 from visualize_episodes import save_videos
 from detr.models.latent_model import Latent_Model_Transformer
 
@@ -130,6 +130,8 @@ def make_policy(policy_class, policy_config):
         policy = ACTPolicy(policy_config)
     elif policy_class == 'CNNMLP':
         policy = CNNMLPPolicy(policy_config)
+    elif policy_class == 'SPIRIT':
+        policy = SpiritACTPolicy(policy_config)
     else:
         raise NotImplementedError
     return policy

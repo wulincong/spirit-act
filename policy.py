@@ -9,8 +9,8 @@ e = IPython.embed
 
 from collections import OrderedDict
 from robomimic.models.base_nets import ResNet18Conv, SpatialSoftmax
-from robomimic.algo.diffusion_policy import replace_bn_with_gn, ConditionalUnet1D
-
+from robomimic.algo.diffusion_policy import replace_bn_with_gn
+from robomimic.models.diffusion_policy_nets import ConditionalUnet1D
 
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 from diffusers.schedulers.scheduling_ddim import DDIMScheduler
@@ -195,6 +195,17 @@ class DiffusionPolicy(nn.Module):
             status_ema = self.ema.averaged_model.load_state_dict(model_dict["ema"])
             status = [status, status_ema]
         return status
+
+
+class SpiritACTPolicy(nn.Module):
+    def __init__(self, args_override):
+        super().__init__()
+        ...
+    
+    def __call__(self, qpos, image, actions=None, is_pad=None, vq_sample=None):
+        env_state = None
+        
+
 
 class ACTPolicy(nn.Module):
     def __init__(self, args_override):

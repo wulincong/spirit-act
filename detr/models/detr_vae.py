@@ -287,7 +287,7 @@ def build(args):
     model = DETRVAE(
         backbones,
         transformer,
-        encoder,
+        encoder.encoder,
         state_dim=state_dim,
         num_queries=args.num_queries,
         camera_names=args.camera_names,
